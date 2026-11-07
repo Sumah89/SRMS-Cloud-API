@@ -400,14 +400,6 @@ namespace SRMS.Cloud.Data
             });
 
             // ── Notifications ──────────────────────────────────────────
-            // Core Notification model has: Title, Message, NotificationType,
-            // TargetRole, TargetClassId, TargetStudentId, SentBy, SentDate,
-            // IsSent, IsActive. The Cloud Notifications table (from SQLite
-            // schema) instead has: SyncId, SchoolId, UserId, Type, Title, Body,
-            // PayloadJson, CreatedDateUtc, IsRead, IsPushed, PushedUtc.
-            //
-            // We ignore the Core-only props and map the sync columns via
-            // HasColumnName so EF writes/reads the correct Postgres columns.
             b.Entity<Notification>(e =>
             {
                 e.HasKey(x => x.Id);
@@ -424,18 +416,20 @@ namespace SRMS.Cloud.Data
                 e.Property(x => x.NotificationType).HasMaxLength(64).HasColumnName("Type");
                 e.Property(x => x.SentDate).HasColumnName("CreatedDateUtc");
                 e.Property(x => x.IsActive).HasColumnName("IsRead");
-                // Extra columns used by sync (not on Core model). We add them
-                // as shadow properties so raw SQL still works.
+
+                // Extra columns used by sync (not on Core model).
                 e.Property<string>("SyncId").HasMaxLength(64);
                 e.HasIndex("SyncId").IsUnique();
                 e.Property<int>("UserId");
                 e.Property<string>("PayloadJson");
                 e.Property<bool>("IsPushed").HasDefaultValue(false);
                 e.Property<DateTime?>("PushedUtc").HasColumnType("timestamp with time zone");
+                
+                // Shadow property for IsRead — define FIRST, then index
+                e.Property<bool>("IsRead").HasDefaultValue(false);
 
                 e.HasIndex("UserId");
                 e.HasIndex("IsRead").HasDatabaseName("IX_Notifications_IsRead");
-e.Property<bool>("IsRead").HasDefaultValue(false);
             });
 
             // ── PublishedReports ───────────────────────────────────────
