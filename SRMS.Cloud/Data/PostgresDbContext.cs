@@ -434,7 +434,8 @@ namespace SRMS.Cloud.Data
                 e.Property<DateTime?>("PushedUtc").HasColumnType("timestamp with time zone");
 
                 e.HasIndex("UserId");
-                e.HasIndex("IsRead");
+                e.HasIndex("IsRead").HasDatabaseName("IX_Notifications_IsRead");
+e.Property<bool>("IsRead").HasDefaultValue(false);
             });
 
             // ── PublishedReports ───────────────────────────────────────
