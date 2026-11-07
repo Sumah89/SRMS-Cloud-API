@@ -79,6 +79,7 @@ namespace SRMS.Cloud.Data
             b.Entity<User>(e =>
             {
                 e.HasKey(x => x.Id);
+                e.Ignore(x => x.SchoolName); // <--- ADD THIS LINE
                 e.Property(x => x.Username).IsRequired().HasMaxLength(128);
                 e.HasIndex(x => x.Username).IsUnique();
                 e.Property(x => x.FullName).HasMaxLength(256);
