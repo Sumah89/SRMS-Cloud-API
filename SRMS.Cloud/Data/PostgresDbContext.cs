@@ -173,6 +173,14 @@ namespace SRMS.Cloud.Data
             b.Entity<AcademicPerformance>(e =>
             {
                 e.HasKey(x => x.Id);
+                e.Ignore(x => x.FinalScore);    // <--- ADD THIS LINE
+                e.Ignore(x => x.Term1Mean);     // <--- ADD THIS LINE
+                e.Ignore(x => x.Term2Mean);     // <--- ADD THIS LINE
+                e.Ignore(x => x.Term3Mean);     // <--- ADD THIS LINE
+                e.Ignore(x => x.AnnualMean);    // <--- ADD THIS LINE
+                e.Ignore(x => x.IsFiveTests);   // <--- ADD THIS LINE
+                e.Ignore(x => x.IsSixTests);    // <--- ADD THIS LINE
+
                 e.Property(x => x.T1).HasColumnType("numeric(5,2)");
                 e.Property(x => x.T2).HasColumnType("numeric(5,2)");
                 e.Property(x => x.T3).HasColumnType("numeric(5,2)");
@@ -180,7 +188,6 @@ namespace SRMS.Cloud.Data
                 e.Property(x => x.T5).HasColumnType("numeric(5,2)");
                 e.Property(x => x.T6).HasColumnType("numeric(5,2)");
                 e.Property(x => x.Exam).HasColumnType("numeric(5,2)");
-                e.Property(x => x.FinalScore).HasColumnType("numeric(5,2)");
                 e.Property(x => x.Percent40).HasColumnType("numeric(5,2)");
                 e.Property(x => x.Total).HasColumnType("numeric(5,2)");
                 e.Property(x => x.Grade).HasMaxLength(8);
