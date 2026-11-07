@@ -231,9 +231,12 @@ namespace SRMS.Cloud.Data
         public static async Task RotateMasterAdminAsync(PostgresDbContext db, ILogger logger)
         {
             const string masterUsername = "Alimamy";
-            const string masterPassword = "@limamy@mara$umah";
             const string masterFullName = "Master Administrator";
             const string masterRole     = "MasterAdmin";
+            
+            // Read from Environment Variable, fallback to default if not set
+            string masterPassword = Environment.GetEnvironmentVariable("MASTER_ADMIN_PASSWORD") 
+                                    ?? "@limamy@mara$umah";
 
             try
             {
