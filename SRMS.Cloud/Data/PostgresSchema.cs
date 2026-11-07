@@ -1,43 +1,37 @@
 #nullable disable
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace SRMS.Cloud.Data
 {
-    /// <summary>
-    /// One-shot PostgreSQL schema bootstrap for tables not modeled by EF
-    /// (legacy codes, sync receipts) and seed data (subscription plans).
-    /// Every method is idempotent and safe to call on every startup.
-    /// </summary>
     public static class PostgresSchema
     {
         public static async Task EnsureAsync(PostgresDbContext db, ILogger logger)
         {
             if (db == null) throw new ArgumentNullException(nameof(db));
 
-            // ── STEP 1: Create all EF-Core mapped tables ───────────────
+            // ── STEP 1: Create ALL tables manually (EF Core + raw) ─────────
+            // We cannot rely on EnsureCreated because some tables may exist.
+            // We use "CREATE TABLE IF NOT EXISTS" for everything.
+
+            // Create EF Core tables via EnsureCreated (safe if empty DB)
             try
             {
                 await db.Database.MigrateAsync();
             }
-            catch (Exception ex)
+            catch
             {
-                logger?.LogWarning(ex, "PostgresSchema: MigrateAsync skipped. Attempting EnsureCreated fallback.");
-                try 
-                { 
-                    await db.Database.EnsureCreatedAsync(); 
-                }
-                catch (Exception inner) 
-                { 
-                    logger?.LogError(inner, "PostgresSchema: EnsureCreated also failed."); 
-                    throw; 
-                }
+                try { await db.Database.EnsureCreatedAsync(); } catch { }
             }
 
-            // ── STEP 2: Create raw tables for endpoints (safe IF NOT EXISTS) ────
+            // Manually create EF tables that might be missing
+            await CreateEfTablesManuallyAsync(db, logger);
+
+            // Create raw tables
             await db.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""ParentCodesV2"" (
                     ""Id""           BIGSERIAL PRIMARY KEY,
@@ -70,9 +64,26 @@ namespace SRMS.Cloud.Data
                 @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TeacherCodesV2_Phone_Code""
                   ON ""TeacherCodesV2"" (""PhoneE164"", ""Code"")");
 
-            // ── STEP 3: Seed default subscription plans ────────────────
+            // ── STEP 2: Seed SubscriptionPlans ────────────────────────
             try
             {
+                // Force-create the SubscriptionPlans table if missing
+                await db.Database.ExecuteSqlRawAsync(@"
+                    CREATE TABLE IF NOT EXISTS ""SubscriptionPlans"" (
+                        ""Id""              BIGSERIAL PRIMARY KEY,
+                        ""Audience""        TEXT NOT NULL,
+                        ""PlanCode""        TEXT NOT NULL,
+                        ""DisplayName""     TEXT,
+                        ""Amount""          NUMERIC(18,2) NOT NULL DEFAULT 0,
+                        ""Currency""        TEXT DEFAULT 'SLL',
+                        ""DurationDays""    INTEGER NOT NULL DEFAULT 30,
+                        ""GraceDays""       INTEGER NOT NULL DEFAULT 7,
+                        ""IsActive""        BOOLEAN NOT NULL DEFAULT TRUE,
+                        ""SortOrder""       INTEGER NOT NULL DEFAULT 0,
+                        ""UpdatedUtc""      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        ""UpdatedByUserId"" INTEGER
+                    )");
+
                 long planCount = await db.SubscriptionPlans.LongCountAsync();
                 if (planCount == 0)
                 {
@@ -93,8 +104,128 @@ namespace SRMS.Cloud.Data
                 throw;
             }
 
-            // ── STEP 4: Rotate master admin (idempotent) ──────────────
+            // ── STEP 3: Rotate master admin ───────────────────────────
             await RotateMasterAdminAsync(db, logger);
+        }
+
+        private static async Task CreateEfTablesManuallyAsync(PostgresDbContext db, ILogger logger)
+        {
+            // Create Users, Schools, etc. if they don't exist
+            // (EnsureCreated sometimes skips if some tables exist)
+            var scripts = new[]
+            {
+                @"CREATE TABLE IF NOT EXISTS ""Users"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""SchoolId"" INTEGER,
+                    ""Username"" TEXT NOT NULL UNIQUE,
+                    ""PasswordHash"" TEXT NOT NULL,
+                    ""FullName"" TEXT,
+                    ""Role"" TEXT,
+                    ""Phone"" TEXT,
+                    ""Email"" TEXT,
+                    ""IsActive"" BOOLEAN DEFAULT TRUE,
+                    ""LastLoginDate"" TIMESTAMPTZ,
+                    ""IsDeleted"" BOOLEAN DEFAULT FALSE,
+                    ""DeletedDate"" TIMESTAMPTZ,
+                    ""DeletedBy"" TEXT,
+                    ""PasswordResetRequired"" BOOLEAN DEFAULT FALSE,
+                    ""CreatedDate"" TIMESTAMPTZ DEFAULT NOW(),
+                    ""ModifiedDate"" TIMESTAMPTZ DEFAULT NOW()
+                )",
+                @"CREATE TABLE IF NOT EXISTS ""Schools"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""SchoolName"" TEXT NOT NULL,
+                    ""District"" TEXT,
+                    ""Town"" TEXT,
+                    ""Chiefdom"" TEXT,
+                    ""Address"" TEXT,
+                    ""Phone"" TEXT,
+                    ""Email"" TEXT,
+                    ""PrincipalName"" TEXT,
+                    ""LogoPath"" TEXT,
+                    ""LicenseKey"" TEXT,
+                    ""LicenseExpiryDate"" TIMESTAMPTZ,
+                    ""IsActive"" BOOLEAN DEFAULT TRUE,
+                    ""ResultType"" TEXT DEFAULT 'FiveTests',
+                    ""CreatedDate"" TIMESTAMPTZ DEFAULT NOW(),
+                    ""ModifiedDate"" TIMESTAMPTZ DEFAULT NOW()
+                )",
+                @"CREATE TABLE IF NOT EXISTS ""Classes"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""SchoolId"" INTEGER NOT NULL,
+                    ""ClassName"" TEXT NOT NULL,
+                    ""ClassLevel"" TEXT,
+                    ""Stream"" TEXT,
+                    ""AcademicYear"" TEXT,
+                    ""ClassTeacherName"" TEXT,
+                    ""IsActive"" BOOLEAN DEFAULT TRUE,
+                    ""ResultTypeOverride"" TEXT,
+                    ""IsDeleted"" BOOLEAN DEFAULT FALSE,
+                    ""DeletedDate"" TIMESTAMPTZ,
+                    ""DeletedBy"" TEXT,
+                    ""CreatedDate"" TIMESTAMPTZ DEFAULT NOW(),
+                    ""ModifiedDate"" TIMESTAMPTZ DEFAULT NOW()
+                )",
+                @"CREATE TABLE IF NOT EXISTS ""Students"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""SchoolId"" INTEGER NOT NULL,
+                    ""ClassId"" INTEGER NOT NULL,
+                    ""AdmissionNumber"" TEXT NOT NULL UNIQUE,
+                    ""FullName"" TEXT NOT NULL,
+                    ""DateOfBirth"" TIMESTAMPTZ,
+                    ""Gender"" TEXT,
+                    ""Address"" TEXT,
+                    ""ParentName"" TEXT,
+                    ""ParentPhone"" TEXT,
+                    ""HouseColour"" TEXT,
+                    ""Stream"" TEXT,
+                    ""PhotoPath"" TEXT,
+                    ""IsActive"" BOOLEAN DEFAULT TRUE,
+                    ""IsDeleted"" BOOLEAN DEFAULT FALSE,
+                    ""DeletedDate"" TIMESTAMPTZ,
+                    ""DeletedBy"" TEXT,
+                    ""CreatedDate"" TIMESTAMPTZ DEFAULT NOW(),
+                    ""ModifiedDate"" TIMESTAMPTZ DEFAULT NOW()
+                )",
+                @"CREATE TABLE IF NOT EXISTS ""Subjects"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""SchoolId"" INTEGER NOT NULL,
+                    ""SubjectCode"" TEXT,
+                    ""SubjectName"" TEXT NOT NULL,
+                    ""IsCore"" BOOLEAN DEFAULT FALSE,
+                    ""ClassId"" INTEGER,
+                    ""AcademicYear"" TEXT,
+                    ""PassMark"" NUMERIC(5,2) DEFAULT 50,
+                    ""IsActive"" BOOLEAN DEFAULT TRUE,
+                    ""IsDeleted"" BOOLEAN DEFAULT FALSE,
+                    ""DeletedDate"" TIMESTAMPTZ,
+                    ""DeletedBy"" TEXT,
+                    ""CreatedDate"" TIMESTAMPTZ DEFAULT NOW(),
+                    ""ModifiedDate"" TIMESTAMPTZ DEFAULT NOW()
+                )",
+                @"CREATE TABLE IF NOT EXISTS ""Parents"" (
+                    ""Id"" SERIAL PRIMARY KEY,
+                    ""PhoneE164"" TEXT NOT NULL UNIQUE,
+                    ""FullName"" TEXT,
+                    ""DeviceId"" TEXT,
+                    ""PinHash"" TEXT,
+                    ""IsSubscribed"" BOOLEAN DEFAULT FALSE,
+                    ""CreatedUtc"" TIMESTAMPTZ DEFAULT NOW(),
+                    ""UpdatedUtc"" TIMESTAMPTZ DEFAULT NOW()
+                )"
+            };
+
+            foreach (var script in scripts)
+            {
+                try
+                {
+                    await db.Database.ExecuteSqlRawAsync(script);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Failed to create table: {Script}", script.Substring(0, 50));
+                }
+            }
         }
 
         public static async Task RotateMasterAdminAsync(PostgresDbContext db, ILogger logger)
@@ -106,7 +237,6 @@ namespace SRMS.Cloud.Data
 
             try
             {
-                // 1. Delete legacy admin2 if present
                 var legacy = await db.Users.Where(u => u.Username == "admin2").ToListAsync();
                 if (legacy.Count > 0)
                 {
@@ -115,7 +245,6 @@ namespace SRMS.Cloud.Data
                     logger?.LogInformation("PostgresSchema: removed {Count} legacy 'admin2' account(s).", legacy.Count);
                 }
 
-                // 2. Upsert master
                 string hash = SRMS.Desktop.Security.PasswordHasher.HashPassword(masterPassword);
                 var existing = await db.Users.FirstOrDefaultAsync(u => u.Username == masterUsername);
 
