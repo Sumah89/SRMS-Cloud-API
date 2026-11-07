@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SRMS.Desktop</RootNamespace>
+    <AssemblyName>SRMS.Desktop.Core</AssemblyName>
+
+    <!-- NU1903 was for SQLitePCLRaw.lib.e_sqlite3; fixed at source by bumping Microsoft.Data.Sqlite to 10.0.1.
+         Remaining suppressions are nullable/compiler warnings, kept as-is. -->
+    <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8619;CS8625;CS8629;CS8765</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Patched SQLite (10.0.1 → SQLitePCLRaw 2.1.12, no high-severity vuln).
+         API-compatible with 10.0.0, so Desktop/Mobile need no code changes. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.1" />
+
+    <!-- Keep the 'green' bundle for Android bionic-native libe_sqlite3.so. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.1.11" />
+
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+
+    <PackageReference Include="Syncfusion.XlsIO.Net.Core" Version="35.1.43" />
+    <PackageReference Include="Syncfusion.XlsIORenderer.Net.Core" Version="35.1.43" />
+    <PackageReference Include="Syncfusion.Pdf.Net.Core" Version="35.1.43" />
+
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Common" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\*.xlsx" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,17 @@
+# Ignore huge build folders and IDE files
+.vs/
+bin/
+obj/
+publish/
+*.user
+
+# Ignore secrets
+appsettings.Production.json
+appsettings.Development.json
+
+# Ignore other projects (ONLY upload Cloud and Core)
+SRMS.Desktop/
+SRMS.Mobile/
+SRMS.Web/
+functions/
+SRMS.slnx

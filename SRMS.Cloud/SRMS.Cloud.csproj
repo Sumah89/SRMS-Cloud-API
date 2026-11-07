@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<RootNamespace>SRMS.Cloud</RootNamespace>
+		<AssemblyName>SRMS.Cloud</AssemblyName>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<UserSecretsId>srms-cloud-7f3a9c1e-4b2d-4e8a-9c5f-1a2b3c4d5e6f</UserSecretsId>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- Auth (JWT) — bumped to 10.0.1 to pull patched Pkcs -->
+		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.1" />
+
+		<!-- Force-pin Pkcs to the patched version (defensive) -->
+		<PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.1" />
+
+		<!-- PostgreSQL via EF Core -->
+		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+
+		<!-- Serilog -->
+		<PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\SRMS.Core\SRMS.Core.csproj" />
+	</ItemGroup>
+
+</Project>
