@@ -18,18 +18,26 @@ namespace SRMS.Cloud.Data
         {
             if (db == null) throw new ArgumentNullException(nameof(db));
 
+            // ── STEP 1: Create all EF-Core mapped tables ───────────────
             try
             {
                 await db.Database.MigrateAsync();
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "PostgresSchema: MigrateAsync skipped (no migrations found or DB unreachable). Will attempt EnsureCreated fallback.");
-                try { await db.Database.EnsureCreatedAsync(); }
-                catch (Exception inner) { logger?.LogError(inner, "PostgresSchema: EnsureCreated also failed."); throw; }
+                logger?.LogWarning(ex, "PostgresSchema: MigrateAsync skipped. Attempting EnsureCreated fallback.");
+                try 
+                { 
+                    await db.Database.EnsureCreatedAsync(); 
+                }
+                catch (Exception inner) 
+                { 
+                    logger?.LogError(inner, "PostgresSchema: EnsureCreated also failed."); 
+                    throw; 
+                }
             }
 
-            // ── Raw tables the endpoints need ──────────────────────────
+            // ── STEP 2: Create raw tables for endpoints (safe IF NOT EXISTS) ────
             await db.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""ParentCodesV2"" (
                     ""Id""           BIGSERIAL PRIMARY KEY,
@@ -62,30 +70,33 @@ namespace SRMS.Cloud.Data
                 @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TeacherCodesV2_Phone_Code""
                   ON ""TeacherCodesV2"" (""PhoneE164"", ""Code"")");
 
-            // ── Seed default subscription plans ───────────────────────
-            long planCount = await db.SubscriptionPlans.LongCountAsync();
-            if (planCount == 0)
+            // ── STEP 3: Seed default subscription plans ────────────────
+            try
             {
-                DateTime now = DateTime.UtcNow;
-                db.SubscriptionPlans.AddRange(
-                    new SubscriptionPlan { Audience = "school", PlanCode = "monthly", DisplayName = "Monthly — Le 50",  Amount = 50m,  Currency = "SLL", DurationDays = 30,  GraceDays = 7, IsActive = true, SortOrder = 10, UpdatedUtc = now },
-                    new SubscriptionPlan { Audience = "school", PlanCode = "annual",  DisplayName = "Annual — Le 500",  Amount = 500m, Currency = "SLL", DurationDays = 365, GraceDays = 7, IsActive = true, SortOrder = 20, UpdatedUtc = now },
-                    new SubscriptionPlan { Audience = "parent", PlanCode = "monthly", DisplayName = "Monthly — Le 50",  Amount = 50m,  Currency = "SLL", DurationDays = 30,  GraceDays = 7, IsActive = true, SortOrder = 10, UpdatedUtc = now },
-                    new SubscriptionPlan { Audience = "parent", PlanCode = "annual",  DisplayName = "Annual — Le 500",  Amount = 500m, Currency = "SLL", DurationDays = 365, GraceDays = 7, IsActive = true, SortOrder = 20, UpdatedUtc = now }
-                );
-                await db.SaveChangesAsync();
-                logger?.LogInformation("PostgresSchema: seeded 4 default subscription plans (school/parent × monthly/annual).");
+                long planCount = await db.SubscriptionPlans.LongCountAsync();
+                if (planCount == 0)
+                {
+                    DateTime now = DateTime.UtcNow;
+                    db.SubscriptionPlans.AddRange(
+                        new SubscriptionPlan { Audience = "school", PlanCode = "monthly", DisplayName = "Monthly — Le 50",  Amount = 50m,  Currency = "SLL", DurationDays = 30,  GraceDays = 7, IsActive = true, SortOrder = 10, UpdatedUtc = now },
+                        new SubscriptionPlan { Audience = "school", PlanCode = "annual",  DisplayName = "Annual — Le 500",  Amount = 500m, Currency = "SLL", DurationDays = 365, GraceDays = 7, IsActive = true, SortOrder = 20, UpdatedUtc = now },
+                        new SubscriptionPlan { Audience = "parent", PlanCode = "monthly", DisplayName = "Monthly — Le 50",  Amount = 50m,  Currency = "SLL", DurationDays = 30,  GraceDays = 7, IsActive = true, SortOrder = 10, UpdatedUtc = now },
+                        new SubscriptionPlan { Audience = "parent", PlanCode = "annual",  DisplayName = "Annual — Le 500",  Amount = 500m, Currency = "SLL", DurationDays = 365, GraceDays = 7, IsActive = true, SortOrder = 20, UpdatedUtc = now }
+                    );
+                    await db.SaveChangesAsync();
+                    logger?.LogInformation("PostgresSchema: seeded 4 default subscription plans.");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "PostgresSchema: failed to seed subscription plans.");
+                throw;
             }
 
-            // ── Rotate master admin (idempotent) ──────────────────────
+            // ── STEP 4: Rotate master admin (idempotent) ──────────────
             await RotateMasterAdminAsync(db, logger);
         }
 
-        /// <summary>
-        /// Removes the deprecated "admin2" account (if any) and upserts the
-        /// master admin (Alimamy / @limamy@mara$umah) as MasterAdmin.
-        /// Safe to call on every startup.
-        /// </summary>
         public static async Task RotateMasterAdminAsync(PostgresDbContext db, ILogger logger)
         {
             const string masterUsername = "Alimamy";
